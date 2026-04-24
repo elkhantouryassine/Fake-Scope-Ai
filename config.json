@@ -1,0 +1,7 @@
+{
+  "IMG_SIZE": 160,
+  "MAX_IMGS": 2000,
+  "n_train": 2800,
+  "n_val": 600,
+  "n_test": 600
+}
