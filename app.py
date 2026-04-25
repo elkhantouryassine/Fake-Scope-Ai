@@ -984,12 +984,19 @@ def analyze_video(video_path, seuil, sample_rate):
     if video_path is None:
         return None, "// no video uploaded"
 
-    cap          = cv2.VideoCapture(video_path)
+    # Fix: Gradio peut passer un dict
+    if isinstance(video_path, dict):
+        video_path = video_path.get("name", video_path.get("path", ""))
+
+    seuil = float(seuil)
+    sample_rate = int(sample_rate)
+
+    cap = cv2.VideoCapture(video_path)
     face_cascade = cv2.CascadeClassifier(
         cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
     )
     total_frames    = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps             = cap.get(cv2.CAP_PROP_FPS)
+    fps             = cap.get(cv2.CAP_PROP_FPS) or 25
     results         = []
     frames_analysed = 0
     frame_idx       = 0
@@ -998,17 +1005,21 @@ def analyze_video(video_path, seuil, sample_rate):
         ret, frame = cap.read()
         if not ret:
             break
-        if frame_idx % int(sample_rate) == 0:
+        if frame_idx % sample_rate == 0:
             gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(50, 50))
             if len(faces) > 0:
                 faces      = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
                 x, y, w, h = faces[0]
                 x1 = max(0, x - int(0.2*w));  y1 = max(0, y - int(0.2*h))
-                x2 = min(frame.shape[1], x+w+int(0.2*w))
-                y2 = min(frame.shape[0], y+h+int(0.2*h))
+                x2 = min(frame.shape[1], x + w + int(0.2*w))
+                y2 = min(frame.shape[0], y + h + int(0.2*h))
+                crop = frame[y1:y2, x1:x2]
+                if crop.size == 0:
+                    frame_idx += 1
+                    continue
                 face = cv2.resize(
-                    cv2.cvtColor(frame[y1:y2, x1:x2], cv2.COLOR_BGR2RGB),
+                    cv2.cvtColor(crop, cv2.COLOR_BGR2RGB),
                     (IMG_SIZE, IMG_SIZE)
                 )
                 score, is_fake, conf, _, _ = predict_face(face)
@@ -1050,8 +1061,9 @@ def analyze_video(video_path, seuil, sample_rate):
     ax.axhline(seuil, color='#ff4c4c', ls='--', lw=1,
                label=f'Threshold {seuil}', zorder=4)
 
+    # Fix: suppression du paramètre letter_spacing invalide
     ax.set_xlabel('FRAME', fontsize=9, color='#3a3a3a', labelpad=8,
-                  fontfamily='monospace', fontweight='bold', letter_spacing=0.1)
+                  fontfamily='monospace', fontweight='bold')
     ax.set_ylabel('SCORE', fontsize=9, color='#3a3a3a', labelpad=8,
                   fontfamily='monospace', fontweight='bold')
     ax.set_title('DEEPFAKE SCORE TIMELINE',
@@ -1074,16 +1086,16 @@ def analyze_video(video_path, seuil, sample_rate):
                 facecolor='#0d0d0d', edgecolor='none')
     plt.close()
 
+    fps_display = fps if fps > 0 else 25
     summary = (
         f"VERDICT         : {verdict_vid}\n\n"
         f"FRAMES ANALYZED : {frames_analysed}\n"
         f"FAKE FRAMES     : {fake_count}  ({fake_count/frames_analysed:.1%})\n"
         f"REAL FRAMES     : {real_count}  ({real_count/frames_analysed:.1%})\n"
         f"AVG SCORE       : {avg_score:.4f}\n"
-        f"DURATION        : {total_frames/fps:.1f}s  @  {fps:.0f} FPS"
+        f"DURATION        : {total_frames/fps_display:.1f}s  @  {fps_display:.0f} FPS"
     )
     return Image.open(chart_path), summary
-
 
 # ══════════════════════════════════════════════════════════
 # INTERFACE GRADIO
